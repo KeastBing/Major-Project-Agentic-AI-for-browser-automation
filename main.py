@@ -1,15 +1,14 @@
 import asyncio
 import random
-import json
-import time
-from pathlib import Path
 from patchright.async_api import Playwright, async_playwright
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_vertexai import ChatVertexAI
+from langchain.schema import HumanMessage
 from pprint import pprint
 import tools as my_tools
 import fake_tools
 import utilities as util
 from dotenv import load_dotenv
+import base64
 
 load_dotenv()
 
@@ -25,17 +24,14 @@ class AntiDetectionSetup:
         ]
         
     def get_random_viewport(self):
-        """Generate random but realistic viewport sizes"""
         viewports = [
-            {'width': 1920, 'height': 1080},
-            {'width': 1366, 'height': 768},
-            {'width': 1536, 'height': 864},
-            {'width': 1440, 'height': 900}
+            {'width': 1904, 'height': 940},
+            {'width': 1466, 'height': 715},
+            {'width': 942, 'height': 938}
         ]
         return random.choice(viewports)
     
     def get_browser_args(self):
-        """Get optimized browser arguments for stealth"""
         return [
             '--disable-blink-features=AutomationControlled',
             '--disable-dev-shm-usage',
@@ -57,7 +53,6 @@ class AntiDetectionSetup:
         ]
     
     def get_headers(self):
-        """Get realistic HTTP headers"""
         return {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
             'Accept-Language': 'en-US,en;q=0.5',
@@ -71,11 +66,12 @@ class AntiDetectionSetup:
             'Cache-Control': 'max-age=0'
         }
 
+
 async def llm_main(playwright: Playwright):
+
     user_prompt = input("type stuff: ")
     global in_use
     
-    # Initialize anti-detection setup
     anti_detect = AntiDetectionSetup()
     
     # Getting the system prompt
@@ -132,23 +128,19 @@ async def llm_main(playwright: Playwright):
         );
     """)
     
-    # Navigate to Google with random delay
     await asyncio.sleep(random.uniform(1, 3))
     await page.goto("https://www.google.com/")
-    
-    # Wait for page to fully load
     await page.wait_for_load_state("networkidle")
     
-    # Simulate human behavior - scroll a bit
     await page.mouse.wheel(0, random.randint(100, 300))
     await asyncio.sleep(random.uniform(0.5, 1.5))
     
     # Tools setup
     tools = fake_tools.make_tools(page=page)
-    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite")
+    llm = ChatVertexAI(model="gemini-2.0-flash-lite")
     llm_with_tools = llm.bind_tools(tools=tools)
     
-    # Context setup
+    # cleaning context
     open('context.txt', 'w').close()
     
     # Prompt setup
@@ -163,10 +155,9 @@ async def llm_main(playwright: Playwright):
     raw_output = llm_with_tools.invoke(system_prompt)
     
     while in_use:
-        print(raw_output.content)
+        print(raw_output)
         
         try:
-            # Add random delay before tool execution
             await asyncio.sleep(random.uniform(0.5, 2))
             res = await my_tools.run_tool_function(page, raw_output)
         except Exception as e:
@@ -200,10 +191,27 @@ async def llm_main(playwright: Playwright):
             context=context, 
             tool_resp=tool_resp
         )
+
+        img_path = f"screenshots/web_img.png"
+        await page.screenshot(path=img_path)
+        with open(img_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode("utf-8")
         
-        # Add delay before next LLM call
+        system_message = HumanMessage(
+    content=[
+        {
+            "type": "text",
+            "text": new_prompt,
+        },
+        {
+            "type": "image_url",  # ✅ CORRECT
+            "image_url": {"url": f"data:image/png;base64,{img_b64}"}
+        },])
+        
+
+
         await asyncio.sleep(random.uniform(1, 3))
-        raw_output = llm_with_tools.invoke(new_prompt)
+        raw_output = llm_with_tools.invoke([system_message])
     
     # Cleanup
     await browser.close()
