@@ -16,7 +16,7 @@ embeddings = HuggingFaceEmbeddings(
 )
 
 
-#helper function for clicking
+#helper function for clickin
 def build_selector(infos):
     all_selectors = []
 
