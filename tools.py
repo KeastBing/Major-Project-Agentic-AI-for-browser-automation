@@ -259,6 +259,7 @@ async def get_ui_element(page:Page, query:list):
 
     return similar_ui
 
+# filling thing
 async def click_thing(page:Page, args:list):
     selector = args[0]
     await page.locator(selector).click()

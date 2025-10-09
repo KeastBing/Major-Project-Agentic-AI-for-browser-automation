@@ -67,158 +67,163 @@ class AntiDetectionSetup:
         }
 
 
-async def llm_main(playwright: Playwright):
+async def run_automation(user_prompt: str, log_callback=None):
+    if log_callback is None:
+        def log_callback(message: str):
+            print(message)
 
-    user_prompt = input("type stuff: ")
+    # user_prompt = user_prompt
     global in_use
     
     anti_detect = AntiDetectionSetup()
     
-    # Getting the system prompt
-    with open("systemprompt.md", "r", encoding="utf-8") as f:
-        system_prompt = f.read()
-    
-    # Enhanced browser setup with anti-detection
-    google = playwright.chromium
-    
-    # Create persistent context for better stealth
-    browser = await google.launch_persistent_context(
-        user_data_dir="./browser_profiles/main",  
-        headless=False, 
-        channel="chrome", 
-        slow_mo=random.randint(300, 800), 
-        viewport=anti_detect.get_random_viewport(),
-        args=anti_detect.get_browser_args()
-    )
-    
-    # Create new page with enhanced setup
-    page = await browser.new_page()
-    
-    # Set realistic headers
-    await page.set_extra_http_headers(anti_detect.get_headers())
-    
-    # Override navigator properties to hide automation
-    await page.add_init_script("""
-        // Remove webdriver property
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => undefined
-        });
-        
-        // Add chrome runtime
-        window.navigator.chrome = {
-            runtime: {},
-        };
-        
-        // Override plugins
-        Object.defineProperty(navigator, 'plugins', {
-            get: () => [1, 2, 3, 4, 5]
-        });
-        
-        // Override languages
-        Object.defineProperty(navigator, 'languages', {
-            get: () => ['en-US', 'en']
-        });
-        
-        // Override permissions
-        const originalQuery = window.navigator.permissions.query;
-        window.navigator.permissions.query = (parameters) => (
-            parameters.name === 'notifications' ?
-                Promise.resolve({ state: Notification.permission }) :
-                originalQuery(parameters)
-        );
-    """)
-    
-    await asyncio.sleep(random.uniform(1, 3))
-    await page.goto("https://www.google.com/")
-    await page.wait_for_load_state("networkidle")
-    
-    await page.mouse.wheel(0, random.randint(100, 300))
-    await asyncio.sleep(random.uniform(0.5, 1.5))
-    
-    # Tools setup
-    tools = fake_tools.make_tools(page=page)
-    llm = ChatVertexAI(model="gemini-2.0-flash-lite")
-    llm_with_tools = llm.bind_tools(tools=tools)
-    
-    # cleaning context
-    open('context.txt', 'w').close()
-    
-    # Prompt setup
-    system_prompt = system_prompt.format(
-        user_prompt=user_prompt, 
-        curr_url=str(page.url), 
-        prev_responses="none because first cycle", 
-        context="none because first cycle", 
-        tool_resp="none because first cycle"
-    )
-    
-    raw_output = llm_with_tools.invoke(system_prompt)
-    
-    while in_use:
-        print(raw_output)
-        
-        try:
-            await asyncio.sleep(random.uniform(0.5, 2))
-            res = await my_tools.run_tool_function(page, raw_output)
-        except Exception as e:
-            print(f"function failed : {e}")
-            res = f"function failed : {e}"
-        
-        pprint(res)
-        
-        if 'llm_final' in res:
-            print(res)
-            in_use = False
-            break
-        
-        util.add_interaction(raw_output.content)
-        curr_url = str(page.url)
-        prev_responses = util.history
-        
-        with open("context.txt", "r", encoding="utf-8") as f:
-            context = f.read()
-        
-        tool_resp = res
-        system_prompt = ""
-        
+    async with async_playwright() as playwright:
+        # Getting the system prompt
         with open("systemprompt.md", "r", encoding="utf-8") as f:
             system_prompt = f.read()
         
-        new_prompt = system_prompt.format(
-            user_prompt=user_prompt, 
-            curr_url=curr_url, 
-            prev_responses=prev_responses, 
-            context=context, 
-            tool_resp=tool_resp
+        # Enhanced browser setup with anti-detection
+        google = playwright.chromium
+        
+        # Create persistent context for better stealth
+        browser = await google.launch_persistent_context(
+            user_data_dir="./browser_profiles/main",  
+            headless=False, 
+            channel="chrome", 
+            slow_mo=random.randint(300, 800), 
+            viewport=anti_detect.get_random_viewport(),
+            args=anti_detect.get_browser_args()
         )
-
-        img_path = f"screenshots/web_img.png"
-        await page.screenshot(path=img_path)
-        with open(img_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode("utf-8")
         
-        system_message = HumanMessage(
-    content=[
-        {
-            "type": "text",
-            "text": new_prompt,
-        },
-        {
-            "type": "image_url",  # ✅ CORRECT
-            "image_url": {"url": f"data:image/png;base64,{img_b64}"}
-        },])
+        # Create new page with enhanced setup
+        page = await browser.new_page()
         
-
-
+        # Set realistic headers
+        await page.set_extra_http_headers(anti_detect.get_headers())
+        
+        # Override navigator properties to hide automation
+        await page.add_init_script("""
+            // Remove webdriver property
+            Object.defineProperty(navigator, 'webdriver', {
+                get: () => undefined
+            });
+            
+            // Add chrome runtime
+            window.navigator.chrome = {
+                runtime: {},
+            };
+            
+            // Override plugins
+            Object.defineProperty(navigator, 'plugins', {
+                get: () => [1, 2, 3, 4, 5]
+            });
+            
+            // Override languages
+            Object.defineProperty(navigator, 'languages', {
+                get: () => ['en-US', 'en']
+            });
+            
+            // Override permissions
+            const originalQuery = window.navigator.permissions.query;
+            window.navigator.permissions.query = (parameters) => (
+                parameters.name === 'notifications' ?
+                    Promise.resolve({ state: Notification.permission }) :
+                    originalQuery(parameters)
+            );
+        """)
+        
         await asyncio.sleep(random.uniform(1, 3))
-        raw_output = llm_with_tools.invoke([system_message])
-    
-    # Cleanup
-    await browser.close()
+        await page.goto("https://www.google.com/")
+        await page.wait_for_load_state("networkidle")
+        
+        await page.mouse.wheel(0, random.randint(100, 300))
+        await asyncio.sleep(random.uniform(0.5, 1.5))
+        
+        # Tools setup
+        tools = fake_tools.make_tools(page=page)
+        llm = ChatVertexAI(model="gemini-2.0-flash-lite")
+        llm_with_tools = llm.bind_tools(tools=tools)
+        
+        # cleaning context
+        open('context.txt', 'w').close()
+        
+        # Prompt setup
+        system_prompt = system_prompt.format(
+            user_prompt=user_prompt, 
+            curr_url=str(page.url), 
+            prev_responses="none because first cycle", 
+            context="none because first cycle", 
+            tool_resp="none because first cycle"
+        )
+        
+        raw_output = llm_with_tools.invoke(system_prompt)
+        
+        while in_use:
+            print(raw_output)
+            
+            try:
+                await asyncio.sleep(random.uniform(0.5, 2))
+                res = await my_tools.run_tool_function(page, raw_output)
+            except Exception as e:
+                print(f"function failed : {e}")
+                res = f"function failed : {e}"
+            
+            pprint(res)
+            
+            if 'llm_final' in res:
+                print(res)
+                in_use = False
+                break
+            
+            util.add_interaction(raw_output.content)
+            curr_url = str(page.url)
+            prev_responses = util.history
+            
+            with open("context.txt", "r", encoding="utf-8") as f:
+                context = f.read()
+            
+            tool_resp = res
+            system_prompt = ""
+            
+            with open("systemprompt.md", "r", encoding="utf-8") as f:
+                system_prompt = f.read()
+            
+            new_prompt = system_prompt.format(
+                user_prompt=user_prompt, 
+                curr_url=curr_url, 
+                prev_responses=prev_responses, 
+                context=context, 
+                tool_resp=tool_resp
+            )
 
-async def main():
-    async with async_playwright() as playwright:
-        await llm_main(playwright)
+            img_path = f"screenshots/web_img.png"
+            await page.screenshot(path=img_path)
+            with open(img_path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode("utf-8")
+            
+            system_message = HumanMessage(
+        content=[
+            {
+                "type": "text",
+                "text": new_prompt,
+            },
+            {
+                "type": "image_url",  # ✅ CORRECT
+                "image_url": {"url": f"data:image/png;base64,{img_b64}"}
+            },])
+            
+
+
+            await asyncio.sleep(random.uniform(1, 3))
+            raw_output = llm_with_tools.invoke([system_message])
+        
+        # Cleanup
+        await browser.close()
+
+async def main_cli():
+    user_prompt = input("Enter task: ")
+    result = await run_automation(user_prompt)
+    print(result)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(main_cli())
