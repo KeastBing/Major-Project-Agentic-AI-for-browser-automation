@@ -7,6 +7,7 @@ import json
 import numpy as np
 from langchain_huggingface import HuggingFaceEmbeddings
 import random
+from pprint import pprint
 
 embeddings = HuggingFaceEmbeddings(
 
@@ -191,19 +192,35 @@ async def get_all_ui_elements(page: Page):
     for element in elements:
         temp_locators = page.locator(element)
         result = await temp_locators.evaluate_all("""
-        (tags) => tags.map(n => ({
-            tag: n.tagName,
-            id: n.id || null,
-            class: n.className || null,
-            name: n.getAttribute('name'),
-            type: n.getAttribute('type'),
-            value: n.value || null,
-            text: n.innerText?.trim() || null,
-            placeholder: n.getAttribute('placeholder'),
-            title: n.getAttribute('title'),
-            alt: n.getAttribute('alt'),
-            href: n.getAttribute('href'),
-            role: n.getAttribute('role')
+        (tags) => tags
+            .filter(n => {
+                
+                if (!n.offsetParent && !n.offsetWidth && !n.offsetHeight) {
+                    return false;
+                }
+                
+                const style = window.getComputedStyle(n);
+                if (style.display === 'none' || 
+                    style.visibility === 'hidden' || 
+                    style.opacity === '0') {
+                    return false;
+                }
+                
+                return true;
+            })
+            .map(n => ({
+                tag: n.tagName,
+                id: n.id || null,
+                class: n.className || null,
+                name: n.getAttribute('name'),
+                type: n.getAttribute('type'),
+                value: n.value || null,
+                text: n.innerText?.trim() || null,
+                placeholder: n.getAttribute('placeholder'),
+                title: n.getAttribute('title'),
+                alt: n.getAttribute('alt'),
+                href: n.getAttribute('href'),
+                role: n.getAttribute('role')
             }))
         """)
         temp_selector = build_selector(result)
@@ -266,6 +283,9 @@ async def click_thing(page:Page, args:list):
 
     return ("clicked + " + str(selector))
 
+async def FINAL(page:Page, Text:list):
+    pprint(Text)
+    return exit()
 
 async def fill_thing(page:Page, args:list):
     selector = args[0]
@@ -312,5 +332,6 @@ func_dict = {"search_google":search_google,
              "ask_user":ask_user,
              "get_ui_element":get_ui_element,
              "click_thing":click_thing,
-             "fill_thing":fill_thing}
+             "fill_thing":fill_thing,
+             "FINAL":FINAL}
 

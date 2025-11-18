@@ -1,6 +1,6 @@
 from collections import deque
 
-history = deque(maxlen=10)
+history = deque(maxlen=15)
 
 def add_interaction(llm_response):
     history.append({

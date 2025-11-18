@@ -19,6 +19,7 @@ def make_tools(page:Page):
         Arguemnt should be a python list [] with the thing you want to search on websites
         ex: ["rtx 5050 laptops"], ["how to solve segmentation fault"], ["phone forums"], etc. NOT A LIST IN A LIST
         Use this function only when on websites like amazon, stackoverflow, flipkart , etc and not google search
+        
         """
     
     @tool
@@ -79,8 +80,8 @@ def make_tools(page:Page):
     async def click_thing(selector: str):
         """argument should be a python list
             use this function ONLY after using get_ui_element function, 
-            it will take in the arguments ['locator_str = 'a.nav_a[href="https://sell.amazon.in/grow-your-business/amazon-global-selling.html?ld=AZIN_Footer_V1&ref=AZIN_Footer_V1"]:has-text("Amazon Global Selling")']
-            Which is a playwright selector and that selector will be clicked use this for buttons mainly
+            it will take in the arguments, for example ['locator_str = 'a.nav_a[href="https://sell.amazon.in/grow-your-business/amazon-global-selling.html?ld=AZIN_Footer_V1&ref=AZIN_Footer_V1"]:has-text("Amazon Global Selling")']
+            Which is a playwright selector and that selector will be clicked use this for buttons mainly, ENSURE THAT THE SELECTOR PROVIDED IS A PLAYWRIGHT SELECTOR
             """
         return 0
     
@@ -89,8 +90,16 @@ def make_tools(page:Page):
         """
         arugement should be a python list
         use this function ONLY after using get_ui_element function,
-        it will take in the arguments ['label.a-form-label:has-text("Email or mobile phone 'number")' , "example@gmail.com"] , ['label.a-form-label', "example name"]
-        Which is a playwright selector and the text you want to enter use this to fill forms applications etc
+        it will take in the arguments for example : ['label.a-form-label:has-text("Email or mobile phone 'number")' , "example@gmail.com"] , ['label.a-form-label', "example name"]
+        Which is a playwright selector and the text you want to enter use this to fill forms applications etc, ALWAYS ASK USER for required information to fill if you do not know them
+        """
+        return 0
+    
+    @tool 
+    async def FINAL(Text):
+        """
+        use this function to give the user your final answer from your findings,
+        the arguments should be a python list
         """
         return 0
 
@@ -98,4 +107,5 @@ def make_tools(page:Page):
             goto_link, search_website,
             get_page_text, write_to_context,
             ask_user, get_ui_element,
-            click_thing, fill_thing]
+            click_thing, fill_thing,
+            FINAL]

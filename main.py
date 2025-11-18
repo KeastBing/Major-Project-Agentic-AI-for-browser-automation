@@ -18,16 +18,14 @@ class AntiDetectionSetup:
     def __init__(self):
         self.user_agents = [
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/1ṇ7.0 Safari/605.1.15",
             "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Mobile Safari/537.36"
         ]
         
     def get_random_viewport(self):
         viewports = [
-            {'width': 1904, 'height': 940},
-            {'width': 1466, 'height': 715},
-            {'width': 942, 'height': 938}
+            {'width': 1904, 'height': 940}
         ]
         return random.choice(viewports)
     
@@ -95,13 +93,10 @@ async def run_automation(user_prompt: str, log_callback=None):
             args=anti_detect.get_browser_args()
         )
         
-        # Create new page with enhanced setup
         page = await browser.new_page()
         
-        # Set realistic headers
         await page.set_extra_http_headers(anti_detect.get_headers())
-        
-        # Override navigator properties to hide automation
+      
         await page.add_init_script("""
             // Remove webdriver property
             Object.defineProperty(navigator, 'webdriver', {
@@ -141,7 +136,7 @@ async def run_automation(user_prompt: str, log_callback=None):
         
         # Tools setup
         tools = fake_tools.make_tools(page=page)
-        llm = ChatVertexAI(model="gemini-2.0-flash-lite")
+        llm = ChatVertexAI(model="gemini-2.5-flash")
         llm_with_tools = llm.bind_tools(tools=tools)
         
         # cleaning context
@@ -159,7 +154,7 @@ async def run_automation(user_prompt: str, log_callback=None):
         raw_output = llm_with_tools.invoke(system_prompt)
         
         while in_use:
-            print(raw_output)
+            pprint(raw_output.content)
             
             try:
                 await asyncio.sleep(random.uniform(0.5, 2))
@@ -208,7 +203,7 @@ async def run_automation(user_prompt: str, log_callback=None):
                 "text": new_prompt,
             },
             {
-                "type": "image_url",  # ✅ CORRECT
+                "type": "image_url", 
                 "image_url": {"url": f"data:image/png;base64,{img_b64}"}
             },])
             
