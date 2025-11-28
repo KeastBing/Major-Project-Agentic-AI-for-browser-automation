@@ -70,20 +70,43 @@ async def run_automation(user_prompt: str, log_callback=None):
         def log_callback(message: str):
             print(message)
 
-    # user_prompt = user_prompt
     global in_use
     
     anti_detect = AntiDetectionSetup()
     
+   
+    async def execute_llm_call_with_retry(llm_instance, prompt_input, retries=3):
+        """
+        Retries the LLM call if it returns None or crashes.
+        """
+        for attempt in range(retries):
+            try:
+                # Use invoke (or ainvoke if your vertex implementation supports it)
+                response = llm_instance.invoke(prompt_input)
+                
+                # Check if response is None or empty
+                if response is None:
+                    print(f"⚠️ Attempt {attempt+1}: LLM returned None. Retrying...")
+                    await asyncio.sleep(2)
+                    continue
+                
+                return response
+            except Exception as e:
+                print(f"⚠️ Attempt {attempt+1}: LLM Error: {e}. Retrying...")
+                await asyncio.sleep(2)
+        
+        print("❌ All LLM retries failed.")
+        return None
+    # ------------------------------------
+
     async with async_playwright() as playwright:
         # Getting the system prompt
         with open("systemprompt.md", "r", encoding="utf-8") as f:
-            system_prompt = f.read()
+            system_prompt_template = f.read()
         
         # Enhanced browser setup with anti-detection
         google = playwright.chromium
         
-        # Create persistent context for better stealth
         browser = await google.launch_persistent_context(
             user_data_dir="./browser_profiles/main",  
             headless=False, 
@@ -94,31 +117,14 @@ async def run_automation(user_prompt: str, log_callback=None):
         )
         
         page = await browser.new_page()
-        
         await page.set_extra_http_headers(anti_detect.get_headers())
       
+        # ... [Keep your existing init scripts here] ...
         await page.add_init_script("""
-            // Remove webdriver property
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined
-            });
-            
-            // Add chrome runtime
-            window.navigator.chrome = {
-                runtime: {},
-            };
-            
-            // Override plugins
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5]
-            });
-            
-            // Override languages
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en']
-            });
-            
-            // Override permissions
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            window.navigator.chrome = { runtime: {} };
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
             const originalQuery = window.navigator.permissions.query;
             window.navigator.permissions.query = (parameters) => (
                 parameters.name === 'notifications' ?
@@ -142,8 +148,8 @@ async def run_automation(user_prompt: str, log_callback=None):
         # cleaning context
         open('context.txt', 'w').close()
         
-        # Prompt setup
-        system_prompt = system_prompt.format(
+        # Format initial prompt
+        current_system_prompt = system_prompt_template.format(
             user_prompt=user_prompt, 
             curr_url=str(page.url), 
             prev_responses="none because first cycle", 
@@ -151,69 +157,123 @@ async def run_automation(user_prompt: str, log_callback=None):
             tool_resp="none because first cycle"
         )
         
-        raw_output = llm_with_tools.invoke(system_prompt)
+        # --- EXECUTION 1: Initial Call ---
+        raw_output = await execute_llm_call_with_retry(llm_with_tools, current_system_prompt)
         
+        # Safety check: If initial call failed after retries, exit safely
+        if raw_output is None:
+            print("Failed to start: LLM returned None.")
+            await browser.close()
+            return "Failed to initialize automation."
+
         while in_use:
-            pprint(raw_output.content)
-            
             try:
-                await asyncio.sleep(random.uniform(0.5, 2))
-                res = await my_tools.run_tool_function(page, raw_output)
+                # 1. Validate raw_output before accessing .content
+                if not raw_output or not hasattr(raw_output, 'content'):
+                    print("⚠️ Invalid LLM output received. Retrying previous step...")
+                    # logic to handle empty state if needed, or break
+                    # For now, we assume we need to trigger the loop end to get new output
+                    pass 
+                else:
+                    pprint(raw_output.content)
+                
+                # 2. Run Tools with Safety
+                res = "No tool execution attempted" # Default value
+                try:
+                    await asyncio.sleep(random.uniform(0.5, 2))
+                    # Only run tool if raw_output is valid
+                    if raw_output:
+                        res = await my_tools.run_tool_function(page, raw_output)
+                    else:
+                        res = "Error: Previous LLM step failed."
+                except Exception as e:
+                    print(f"Tool function failed : {e}")
+                    res = f"function failed : {e}"
+                
+                # Ensure res is not None (Fixes 'NoneType' is not iterable)
+                if res is None:
+                    res = "Tool returned None (Possible error)"
+
+                pprint(res)
+                
+                # 3. Check for completion
+                if 'llm_final' in str(res): # Use str(res) to be safe
+                    print(res)
+                    in_use = False
+                    break
+                
+                # 4. Context Management
+                if raw_output and hasattr(raw_output, 'content'):
+                    util.add_interaction(raw_output.content)
+                
+                curr_url = str(page.url)
+                prev_responses = util.history
+                
+                with open("context.txt", "r", encoding="utf-8") as f:
+                    context = f.read()
+                
+                tool_resp = res
+                
+                # Re-read template to ensure freshness
+                with open("systemprompt.md", "r", encoding="utf-8") as f:
+                    system_prompt_template_loop = f.read()
+                
+                new_prompt = system_prompt_template_loop.format(
+                    user_prompt=user_prompt, 
+                    curr_url=curr_url, 
+                    prev_responses=prev_responses, 
+                    context=context, 
+                    tool_resp=tool_resp
+                )
+
+                img_path = f"screenshots/web_img.png"
+                try:
+                    await page.screenshot(path=img_path)
+                    with open(img_path, "rb") as f:
+                        img_b64 = base64.b64encode(f.read()).decode("utf-8")
+                except Exception as e:
+                    print(f"Screenshot failed: {e}")
+                    img_b64 = "" # Handle missing image gracefully
+                
+                system_message = HumanMessage(
+                    content=[
+                        {
+                            "type": "text",
+                            "text": new_prompt,
+                        },
+                        {
+                            "type": "image_url", 
+                            "image_url": {"url": f"data:image/png;base64,{img_b64}"}
+                        },
+                    ]
+                )
+                
+                await asyncio.sleep(random.uniform(1, 3))
+
+                # --- EXECUTION 2: Loop Call ---
+                # We use the safe wrapper again. 
+                # If this returns None, the next loop iteration catches it at step #1
+                next_output = await execute_llm_call_with_retry(llm_with_tools, [system_message])
+                
+                if next_output is not None:
+                    raw_output = next_output
+                else:
+                    print("⚠️ Failed to get next step from LLM. Retrying loop with previous state...")
+                    # By NOT updating raw_output, we might create a loop, 
+                    # but usually, we want to retry the prompt generation.
+                    # In this specific architecture, retrying the API call (handled in helper) 
+                    # is the best way to fix NoneType.
+                    continue
+
             except Exception as e:
-                print(f"function failed : {e}")
-                res = f"function failed : {e}"
-            
-            pprint(res)
-            
-            if 'llm_final' in res:
-                print(res)
-                in_use = False
-                break
-            
-            util.add_interaction(raw_output.content)
-            curr_url = str(page.url)
-            prev_responses = util.history
-            
-            with open("context.txt", "r", encoding="utf-8") as f:
-                context = f.read()
-            
-            tool_resp = res
-            system_prompt = ""
-            
-            with open("systemprompt.md", "r", encoding="utf-8") as f:
-                system_prompt = f.read()
-            
-            new_prompt = system_prompt.format(
-                user_prompt=user_prompt, 
-                curr_url=curr_url, 
-                prev_responses=prev_responses, 
-                context=context, 
-                tool_resp=tool_resp
-            )
-
-            img_path = f"screenshots/web_img.png"
-            await page.screenshot(path=img_path)
-            with open(img_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            
-            system_message = HumanMessage(
-        content=[
-            {
-                "type": "text",
-                "text": new_prompt,
-            },
-            {
-                "type": "image_url", 
-                "image_url": {"url": f"data:image/png;base64,{img_b64}"}
-            },])
-            
-
-
-            await asyncio.sleep(random.uniform(1, 3))
-            raw_output = llm_with_tools.invoke([system_message])
+                print(f"CRITICAL LOOP ERROR: {e}")
+                print("Retrying loop...")
+                await asyncio.sleep(2)
+                continue
         
         # Cleanup
         await browser.close()
+        return "Automation Finished"
 
 async def main_cli():
     user_prompt = input("Enter task: ")
